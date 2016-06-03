@@ -303,6 +303,31 @@ public class WebCrawler implements Runnable {
         return true;
     }
 
+  /**
+   * Determine whether links in the given page should be added to the queue for crawling.
+   * By default this method returns true always, but classes that extend WebCrawler can
+   * override it in order to implement particular policies about which pages should be
+   * mined for outgoing links and which should not.
+   *
+   * @param page the page currently being visited
+   * @return true if outgoing links from this page should be added to the queue.
+   */
+  protected boolean shouldFollowLinksInPage(Page page) {
+    return true;
+  }
+
+    /**
+     * Classes that extends WebCrawler should overwrite this function to process
+     * the content of the fetched and parsed page.
+     *
+     * @param page
+     *            the page object that is just fetched and parsed.
+     */
+    public void visit(Page page) {
+        // Do nothing by default
+        // Sub-classed should override this to add their custom functionality
+    }
+
     /**
      * Classes that extends WebCrawler should overwrite this function to process
      * the content of the fetched and parsed page.
@@ -415,6 +440,64 @@ public class WebCrawler implements Runnable {
 
                 parser.parse(page, curURL.getURL());
 
+        if (shouldFollowLinksInPage(page)) {
+          ParseData parseData = page.getParseData();
+          List<WebURL> toSchedule = new ArrayList<>();
+          int maxCrawlDepth = myController.getConfig().getMaxDepthOfCrawling();
+          for (WebURL webURL : parseData.getOutgoingUrls()) {
+            webURL.setParentDocid(curURL.getDocid());
+            webURL.setParentUrl(curURL.getURL());
+            int newdocid = docIdServer.getDocId(webURL.getURL());
+            if (newdocid > 0) {
+                // This is not the first time that this Url is visited. So, we set the
+                // depth to a negative number.
+              webURL.setDepth((short) -1);
+              webURL.setDocid(newdocid);
+            } else {
+              webURL.setDocid(-1);
+              webURL.setDepth((short) (curURL.getDepth() + 1));
+              if ((maxCrawlDepth == -1) || (curURL.getDepth() < maxCrawlDepth)) {
+                if (shouldVisit(page, webURL)) {
+                  if (robotstxtServer.allows(webURL)) {
+                    webURL.setDocid(docIdServer.getNewDocID(webURL.getURL()));
+                    toSchedule.add(webURL);
+                  } else {
+                    logger.debug(
+                        "Not visiting: {} as per the server's \"robots.txt\" " +
+                        "policy", webURL.getURL());
+                  }
+                } else {
+                  logger.debug("Not visiting: {} as per your \"shouldVisit\" policy",
+                               webURL.getURL());
+                }
+              }
+            }
+          }
+          frontier.scheduleAll(toSchedule);
+        } else {
+          logger.debug("Not looking for links in page {}, as per your \"shouldFollowLinksInPage\" policy",
+                  page.getWebURL().getURL());
+        }
+        visit(page);
+      }
+    } catch (PageBiggerThanMaxSizeException e) {
+      onPageBiggerThanMaxSize(curURL.getURL(), e.getPageSize());
+    } catch (ParseException pe) {
+      onParseError(curURL);
+    } catch (ContentFetchException cfe) {
+            onContentFetchError(curURL);
+    } catch (NotAllowedContentException nace) {
+      logger.debug(
+          "Skipping: {} as it contains binary content which you configured not to crawl",
+          curURL.getURL());
+    } catch (Exception e) {
+      onUnhandledException(curURL, e);
+    } finally {
+      if (fetchResult != null) {
+        fetchResult.discardContentIfNotConsumed();
+      }
+    }
+  }
                 ParseData parseData = page.getParseData();
                 List<WebURL> toSchedule = new ArrayList<>();
                 int maxCrawlDepth = myController.getConfig().getMaxDepthOfCrawling();
