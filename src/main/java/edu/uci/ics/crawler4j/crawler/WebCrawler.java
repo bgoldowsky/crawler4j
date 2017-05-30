@@ -333,18 +333,6 @@ public class WebCrawler implements Runnable {
         // Sub-classed should override this to add their custom functionality
     }
 
-    /**
-     * Classes that extends WebCrawler should overwrite this function to process
-     * the content of the fetched and parsed page.
-     *
-     * @param page
-     *            the page object that is just fetched and parsed.
-     */
-    public void visit(Page page) {
-        // Do nothing by default
-        // Sub-classed should override this to add their custom functionality
-    }
-
     private void processPage(WebURL curURL) {
         PageFetchResult fetchResult = null;
         try {
@@ -420,31 +408,6 @@ public class WebCrawler implements Runnable {
                     onUnexpectedStatusCode(curURL.getURL(), fetchResult.getStatusCode(),
                                            contentType, description);
                 }
-            WebURL webURL = new WebURL();
-            webURL.setURL(movedToUrl);
-            webURL.setParentDocid(curURL.getParentDocid());
-            webURL.setParentUrl(curURL.getParentUrl());
-            webURL.setDepth(curURL.getDepth());
-            webURL.setDocid(-1);
-            webURL.setAnchor(curURL.getAnchor());
-            if (shouldVisit(page, webURL)) {
-              if (!shouldFollowLinksIn(webURL) || robotstxtServer.allows(webURL)) {
-                webURL.setDocid(docIdServer.getNewDocID(movedToUrl));
-                frontier.schedule(webURL);
-              } else {
-                logger.debug("Not visiting: {} as per the server's \"robots.txt\" policy", webURL.getURL());
-              }
-            } else {
-              logger.debug("Not visiting: {} as per your \"shouldVisit\" policy", webURL.getURL());
-            }
-          }
-        } else { // All other http codes other than 3xx & 200
-          String description = EnglishReasonPhraseCatalog.INSTANCE
-              .getReason(fetchResult.getStatusCode(), Locale.ENGLISH); // Finds the status reason for all known statuses
-          String contentType =
-              fetchResult.getEntity() == null ? "" : fetchResult.getEntity().getContentType().getValue();
-          onUnexpectedStatusCode(curURL.getURL(), fetchResult.getStatusCode(), contentType, description);
-        }
 
             } else { // if status code is 200
                 if (!curURL.getURL().equals(fetchResult.getFetchedUrl())) {
@@ -515,7 +478,7 @@ public class WebCrawler implements Runnable {
     } catch (ParseException pe) {
       onParseError(curURL);
     } catch (ContentFetchException cfe) {
-            onContentFetchError(curURL);
+      onContentFetchError(curURL);
     } catch (NotAllowedContentException nace) {
       logger.debug(
           "Skipping: {} as it contains binary content which you configured not to crawl",
